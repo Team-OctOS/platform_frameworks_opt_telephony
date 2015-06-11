@@ -139,9 +139,14 @@ public class SubscriptionController extends ISub.Stub {
     protected TelephonyManager mTelephonyManager;
     protected CallManager mCM;
 
+    // When no valid SIM cards present on device, framework returns DUMMY subIds
+    // with range starting from DUMMY_SUB_ID_BASE.
+    private static final int DUMMY_SUB_ID_BASE = SubscriptionManager.MAX_SUBSCRIPTION_ID_VALUE
+        - PhoneConstants.MAX_PHONE_COUNT_TRI_SIM;
+
     // FIXME: Does not allow for multiple subs in a slot and change to SparseArray
     private static HashMap<Integer, Integer> mSlotIdxToSubId = new HashMap<Integer, Integer>();
-    private static int mDefaultFallbackSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+    private static int mDefaultFallbackSubId = DUMMY_SUB_ID_BASE;
     private static int mDefaultPhoneId = 0;
     private boolean mSubInfoReady = false;
 
@@ -156,9 +161,6 @@ public class SubscriptionController extends ISub.Stub {
 
     private DdsScheduler mScheduler;
     private DdsSchedulerAc mSchedulerAc;
-
-    // Dummy subIds are used when no SIMs present on device
-    private static final int DUMMY_SUB_ID_BASE = 5000;
 
     private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
         @Override
@@ -432,7 +434,7 @@ public class SubscriptionController extends ISub.Stub {
         }
         ArrayList<SubscriptionInfo> subList = null;
         Cursor cursor = mContext.getContentResolver().query(SubscriptionManager.CONTENT_URI,
-                null, selection, selectionArgs, null);
+                null, selection, selectionArgs, SubscriptionManager.SIM_SLOT_INDEX);
         try {
             if (cursor != null) {
                 while (cursor.moveToNext()) {
@@ -811,8 +813,11 @@ public class SubscriptionController extends ISub.Stub {
                         }
 
                         // Set the default sub if not set or if single sim device
+                        // If subId equal with defaultSubId for adding the first SUB record
+                        // This sub is active so that the default fall back sub is not set
                         if (!SubscriptionManager.isValidSubscriptionId(defaultSubId)
-                                || subIdCountMax == 1) {
+                                || subIdCountMax == 1 || defaultSubId == subId
+                                || defaultSubId == DUMMY_SUB_ID_BASE) {
                             setDefaultFallbackSubId(subId);
                         }
                         // If single sim device, set this subscription as the default for everything
@@ -820,7 +825,7 @@ public class SubscriptionController extends ISub.Stub {
                             if (DBG) {
                                 logdl("[addSubInfoRecord] one sim set defaults to subId=" + subId);
                             }
-                            //setDefaultDataSubId(subId);
+                            setDefaultDataSubId(subId);
                             setDataSubId(subId);
                             setDefaultSmsSubId(subId);
                             setDefaultVoiceSubId(subId);
@@ -1092,7 +1097,7 @@ public class SubscriptionController extends ISub.Stub {
         }
 
         if (subId >= DUMMY_SUB_ID_BASE) {
-            logd("getPhoneId,  received summy subId " + subId);
+            logd("getSlotId,  received dummy subId " + subId);
             return subId - DUMMY_SUB_ID_BASE;
         }
 
@@ -1186,16 +1191,14 @@ public class SubscriptionController extends ISub.Stub {
             subId = getDefaultSubId();
         }
 
-        if (subId >= DUMMY_SUB_ID_BASE) {
-            return subId - DUMMY_SUB_ID_BASE;
-        } else if (subId < 0) {
-            return (int) (-1 - subId);
-        }
-
         if (!SubscriptionManager.isValidSubscriptionId(subId)) {
             return SubscriptionManager.INVALID_PHONE_INDEX;
         }
 
+        if (subId >= DUMMY_SUB_ID_BASE) {
+            logd("getPhoneId,  received dummy subId " + subId);
+            return subId - DUMMY_SUB_ID_BASE;
+        }
 
         // FIXME: Assumes phoneId == slotId
         for (Entry<Integer, Integer> entry: mSlotIdxToSubId.entrySet()) {
