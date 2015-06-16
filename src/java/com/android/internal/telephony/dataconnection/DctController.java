@@ -83,6 +83,7 @@ public class DctController extends Handler {
     private SubscriptionController mSubController = SubscriptionController.getInstance();
 
     private static DctController sDctController;
+    private static boolean isOnDemandDdsSwitchInProgress = false;
 
     private int mPhoneNum;
     private PhoneProxy[] mPhones;
@@ -374,7 +375,13 @@ public class DctController extends Handler {
                             EVENT_SET_DATA_ALLOW_DONE, s);
                     Phone phone = mPhones[phoneId].getActivePhone();
 
-                    informDefaultDdsToPropServ(phoneId);
+                    if (!isOnDemandDdsSwitchInProgress) {
+                        informDefaultDdsToPropServ(phoneId);
+                    } else {
+                        int defPhoneId = getDataConnectionFromSetting();
+                        informDefaultDdsToPropServ(defPhoneId);
+                        isOnDemandDdsSwitchInProgress = false;
+                    }
                     DcTrackerBase dcTracker =((PhoneBase)phone).mDcTracker;
                     dcTracker.setDataAllowed(true, allowedDataDone);
                 }
@@ -966,6 +973,7 @@ public class DctController extends Handler {
                     }
                     mPhones[prefPhoneId].registerForAllDataDisconnected(
                             sDctController, EVENT_ALL_DATA_DISCONNECTED, s);
+                    isOnDemandDdsSwitchInProgress = true;
                     break;
                 }
             }
@@ -1188,12 +1196,17 @@ public class DctController extends Handler {
             log("Requested networkSpecifier = " + requestedSpecifier);
             log("my networkSpecifier = " + mNetworkCapabilities.getNetworkSpecifier());
 
+
+            if (!SubscriptionManager.isValidSubscriptionId(currentDds)) {
+                log("Can't handle any network request now, currentDds not ready.");
+                return;
+            }
+
             // For clients that do not send subId in NetworkCapabilities,
             // Connectivity will send to all network factories. Accept only
             // when requestedSpecifier is same as current factory's subId
             if (requestedSpecifier != subId) {
                 log("requestedSpecifier is not same as mysubId. Bail out.");
-                mPendingReq.put(networkRequest.requestId, networkRequest);
                 return;
             }
 
