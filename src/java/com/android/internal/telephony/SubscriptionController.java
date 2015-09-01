@@ -34,6 +34,7 @@ import android.os.Handler;
 import android.os.Message;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.net.NetworkRequest;
 import android.preference.PreferenceManager;
@@ -375,13 +376,15 @@ public class SubscriptionController extends ISub.Stub {
                 SubscriptionManager.SUB_STATE));
         int nwMode = cursor.getInt(cursor.getColumnIndexOrThrow(
                 SubscriptionManager.NETWORK_MODE));
+        int userNwMode = cursor.getInt(cursor.getColumnIndexOrThrow(
+                SubscriptionManager.USER_NETWORK_MODE));
 
         if (DBG) {
             logd("[getSubInfoRecord] id:" + id + " iccid:" + iccId + " simSlotIndex:" + simSlotIndex
                 + " displayName:" + displayName + " nameSource:" + nameSource
                 + " iconTint:" + iconTint + " dataRoaming:" + dataRoaming
                 + " mcc:" + mcc + " mnc:" + mnc + " countIso:" + countryIso +
-                " status:" + status + " nwMode:" + nwMode);
+                " status:" + status + " nwMode:" + nwMode + " userNwMode:" + userNwMode);
         }
 
         String line1Number = mTelephonyManager.getLine1NumberForSubscriber(id);
@@ -391,7 +394,7 @@ public class SubscriptionController extends ISub.Stub {
         }
         return new SubscriptionInfo(id, iccId, simSlotIndex, displayName, carrierName,
                 nameSource, iconTint, number, dataRoaming, iconBitmap, mcc, mnc, countryIso,
-                status, nwMode);
+                status, nwMode, userNwMode);
     }
 
     /**
@@ -1431,12 +1434,57 @@ public class SubscriptionController extends ISub.Stub {
             throw new RuntimeException("setDefaultDataSubId called with DEFAULT_SUB_ID");
         }
         if (DBG) logdl("[setDefaultDataSubId] subId=" + subId);
+
         if (mDctController == null) {
             mDctController = DctController.getInstance();
             mDctController.registerForDefaultDataSwitchInfo(mDataConnectionHandler,
                     EVENT_SET_DEFAULT_DATA_DONE, null);
         }
         mDctController.setDefaultDataSubId(subId);
+
+    }
+
+    private void setDefaultDataSubNetworkType(int subId) {
+        if (subId == SubscriptionManager.DEFAULT_SUBSCRIPTION_ID) {
+            logel("setDefaultDataSubNetworkType called with DEFAULT_SUB_ID");
+            return;
+        }
+        if (DBG) logdl("[setDefaultDataSubNetworkType] subId=" + subId);
+        int len = sProxyPhones.length;
+        if (DBG) logdl("[setDefaultDataSubNetworkType] num phones=" + len);
+
+        boolean isDsds = mTelephonyManager.getMultiSimConfiguration()
+                == TelephonyManager.MultiSimVariants.DSDS;
+        boolean isMultiRat = SystemProperties.getBoolean("ro.ril.multi_rat_capable", false);
+
+        if (isDsds && !isMultiRat && len > 1) {
+            int networkType1 = SubscriptionManager.DEFAULT_NW_MODE;
+            int networkType2 = Phone.NT_MODE_GSM_ONLY; // Hardcoded due to modem limitation
+            int phoneId1 = SubscriptionManager.DEFAULT_PHONE_INDEX;
+            int phoneId2 = SubscriptionManager.DEFAULT_PHONE_INDEX;
+            for (int phoneId = 0; phoneId < len; phoneId++) {
+                PhoneProxy phone = sProxyPhones[phoneId];
+                int id = phone.getSubId();
+
+                if (id == subId) {
+                    networkType1 = getUserNwMode(id);
+                    phoneId1 = phoneId;
+                    if (DBG) logdl("[setDefaultDataSubNetworkType] networkType1: "
+                            + networkType1 + ", phoneId1: " + phoneId1);
+                } else {
+                    phoneId2 = phoneId;
+                    if (DBG) logdl("[setDefaultDataSubNetworkType] networkType2: "
+                            + networkType2 + ", phoneId2: " + phoneId2);
+                }
+            }
+            TelephonyManager.putIntAtIndex(mContext.getContentResolver(),
+                                android.provider.Settings.Global.PREFERRED_NETWORK_MODE,
+                                phoneId1, networkType1);
+            TelephonyManager.putIntAtIndex(mContext.getContentResolver(),
+                                android.provider.Settings.Global.PREFERRED_NETWORK_MODE,
+                                phoneId2, networkType2);
+            ModemBindingPolicyHandler.getInstance().setPreferredNetworkTypesFromDB();
+        }
     }
 
     public void setDataSubId(int subId) {
@@ -1504,9 +1552,11 @@ public class SubscriptionController extends ISub.Stub {
         @Override
         public void handleMessage(Message msg) {
             switch (msg.what) {
-                case EVENT_SET_DEFAULT_DATA_DONE:{
+                case EVENT_SET_DEFAULT_DATA_DONE: {
                     AsyncResult ar = (AsyncResult) msg.obj;
-                    logd("EVENT_SET_DEFAULT_DATA_DONE subId:" + (Integer)ar.result);
+                    int subId = (Integer) ar.result;
+                    logd("EVENT_SET_DEFAULT_DATA_DONE subId:" + subId);
+                    setDefaultDataSubNetworkType(subId);
                     updateDataSubId(ar);
                     break;
                 }
@@ -1693,7 +1743,27 @@ public class SubscriptionController extends ISub.Stub {
         if (subInfo != null)  {
             return subInfo.mNwMode;
         } else {
-            loge("getSubState: invalid subId = " + subId);
+            loge("getNwMode: invalid subId = " + subId);
+            return SubscriptionManager.DEFAULT_NW_MODE;
+        }
+    }
+
+    /* {@hide} */
+    public void setUserNwMode(int subId, int nwMode) {
+        logd("setUserNwMode, nwMode: " + nwMode + " subId: " + subId);
+        ContentValues value = new ContentValues(1);
+        value.put(SubscriptionManager.USER_NETWORK_MODE, nwMode);
+        mContext.getContentResolver().update(SubscriptionManager.CONTENT_URI,
+                value, BaseColumns._ID + "=" + Integer.toString(subId), null);
+    }
+
+    /* {@hide} */
+    public int getUserNwMode(int subId) {
+        SubscriptionInfo subInfo = getActiveSubscriptionInfo(subId);
+        if (subInfo != null)  {
+            return subInfo.mUserNwMode;
+        } else {
+            loge("getUserNwMode: invalid subId = " + subId);
             return SubscriptionManager.DEFAULT_NW_MODE;
         }
     }
