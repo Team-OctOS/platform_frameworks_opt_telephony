@@ -103,6 +103,12 @@ public abstract class PhoneBase extends Handler implements Phone {
                 }
             }
 
+            // For MSIM, check phone ID
+            if (intent.hasExtra(ImsManager.EXTRA_PHONEID)) {
+                if (intent.getIntExtra(ImsManager.EXTRA_PHONEID, -1) != getPhoneId())
+                    return;
+            }
+
             if (intent.getAction().equals(ImsManager.ACTION_IMS_SERVICE_UP)) {
                 mImsServiceReady = true;
                 updateImsPhone();
@@ -455,13 +461,7 @@ public abstract class PhoneBase extends Handler implements Phone {
         mUiccController = UiccController.getInstance();
         mUiccController.registerForIccChanged(this, EVENT_ICC_CHANGED, null);
 
-        // Monitor IMS service - but first poll to see if already up (could miss
-        // intent)
-        ImsManager imsManager = ImsManager.getInstance(mContext, getPhoneId());
-        if (imsManager != null && imsManager.isServiceAvailable()) {
-            mImsServiceReady = true;
-            updateImsPhone();
-        }
+        // Monitor IMS service
         IntentFilter filter = new IntentFilter();
         filter.addAction(ImsManager.ACTION_IMS_SERVICE_UP);
         filter.addAction(ImsManager.ACTION_IMS_SERVICE_DOWN);
@@ -1217,6 +1217,10 @@ public abstract class PhoneBase extends Handler implements Phone {
     */
     public ServiceStateTracker getServiceStateTracker() {
         return null;
+    }
+
+    public ServiceState getBaseServiceState() {
+        return getServiceState();
     }
 
     /**
@@ -2405,5 +2409,11 @@ public abstract class PhoneBase extends Handler implements Phone {
         }
         pw.flush();
         pw.println("++++++++++++++++++++++++++++++++");
+    }
+
+    @Override
+    public void addParticipant(String dialString, Message onComplete) throws CallStateException {
+        throw new CallStateException("addParticipant is not supported in this phone "
+                + this);
     }
 }

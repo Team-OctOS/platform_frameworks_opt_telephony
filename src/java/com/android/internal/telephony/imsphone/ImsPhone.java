@@ -618,7 +618,12 @@ public class ImsPhone extends ImsPhoneBase {
 
     @Override
     public void addParticipant(String dialString) throws CallStateException {
-        mCT.addParticipant(dialString);
+        addParticipant(dialString, null);
+    }
+
+    @Override
+    public void addParticipant(String dialString, Message onComplete) throws CallStateException {
+        mCT.addParticipant(dialString, onComplete);
     }
 
     @Override
@@ -808,8 +813,18 @@ public class ImsPhone extends ImsPhoneBase {
             String dialingNumber,
             int timerSeconds,
             Message onComplete) {
+        setCallForwardingOption(commandInterfaceCFAction, commandInterfaceCFReason, dialingNumber,
+                CommandsInterface.SERVICE_CLASS_VOICE, timerSeconds, onComplete);
+    }
+
+    public void setCallForwardingOption(int commandInterfaceCFAction,
+            int commandInterfaceCFReason,
+            String dialingNumber,
+            int serviceClass,
+            int timerSeconds,
+            Message onComplete) {
         if (DBG) Rlog.d(LOG_TAG, "setCallForwardingOption action=" + commandInterfaceCFAction
-                + ", reason=" + commandInterfaceCFReason);
+                + ", reason=" + commandInterfaceCFReason + " serviceClass=" + serviceClass);
         if ((isValidCommandInterfaceCFAction(commandInterfaceCFAction)) &&
                 (isValidCommandInterfaceCFReason(commandInterfaceCFReason))) {
             Message resp;
@@ -824,6 +839,7 @@ public class ImsPhone extends ImsPhoneBase {
                 ut.updateCallForward(getActionFromCFAction(commandInterfaceCFAction),
                         getConditionFromCFReason(commandInterfaceCFReason),
                         dialingNumber,
+                        serviceClass,
                         timerSeconds,
                         onComplete);
              } catch (ImsException e) {
@@ -882,13 +898,17 @@ public class ImsPhone extends ImsPhoneBase {
 
     @Override
     public void setCallWaiting(boolean enable, Message onComplete) {
+        setCallWaiting(enable, CommandsInterface.SERVICE_CLASS_VOICE, onComplete);
+    }
+
+    public void setCallWaiting(boolean enable, int serviceClass, Message onComplete) {
         if (DBG) Rlog.d(LOG_TAG, "setCallWaiting enable=" + enable);
         Message resp;
         resp = obtainMessage(EVENT_SET_CALL_WAITING_DONE, onComplete);
 
         try {
             ImsUtInterface ut = mCT.getUtInterface();
-            ut.updateCallWaiting(enable, resp);
+            ut.updateCallWaiting(enable, serviceClass, resp);
         } catch (ImsException e) {
             sendErrorResponse(onComplete, e);
         }
@@ -1206,6 +1226,7 @@ public class ImsPhone extends ImsPhoneBase {
             for (int i = 0, s = infos.length; i < s; i++) {
                 if (infos[i].mCondition == ImsUtInterface.CDIV_CF_UNCONDITIONAL) {
                     if (r != null) {
+                        setCallForwardingPreference(infos[i].mStatus == 1);
                         r.setVoiceCallForwardingFlag(1, (infos[i].mStatus == 1),
                             infos[i].mNumber);
                     }
@@ -1275,9 +1296,11 @@ public class ImsPhone extends ImsPhoneBase {
                 IccRecords r = getIccRecords();
                 Cf cf = (Cf) ar.userObj;
                 if (cf.mIsCfu && ar.exception == null && r != null) {
+                    setCallForwardingPreference(msg.arg1 == 1);
                     r.setVoiceCallForwardingFlag(1, msg.arg1 == 1, cf.mSetCfNumber);
                 }
                 sendResponse(cf.mOnComplete, null, ar.exception);
+                updateCallForwardStatus();
                 break;
 
             case EVENT_GET_CALL_FORWARD_DONE:
@@ -1286,6 +1309,7 @@ public class ImsPhone extends ImsPhoneBase {
                     cfInfos = handleCfQueryResult((ImsCallForwardInfo[])ar.result);
                 }
                 sendResponse((Message) ar.userObj, cfInfos, ar.exception);
+                updateCallForwardStatus();
                 break;
 
              case EVENT_SET_CALL_FORWARD_TIMER_DONE:

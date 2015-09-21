@@ -348,6 +348,11 @@ public class PhoneProxy extends Handler implements Phone {
         return mActivePhone.getServiceState();
     }
 
+    public ServiceState
+    getBaseServiceState() {
+        return mActivePhone.getBaseServiceState();
+    }
+
     @Override
     public CellLocation getCellLocation() {
         return mActivePhone.getCellLocation();
@@ -757,6 +762,11 @@ public class PhoneProxy extends Handler implements Phone {
     @Override
     public void addParticipant(String dialString) throws CallStateException {
         mActivePhone.addParticipant(dialString);
+    }
+
+    @Override
+    public void addParticipant(String dialString, Message onComplete) throws CallStateException {
+        mActivePhone.addParticipant(dialString, onComplete);
     }
 
     @Override
