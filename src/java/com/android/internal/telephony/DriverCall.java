@@ -20,6 +20,7 @@ import android.telephony.Rlog;
 import java.lang.Comparable;
 import android.telephony.PhoneNumberUtils;
 import android.os.SystemProperties;
+import android.text.TextUtils;
 
 /**
  * {@hide}
