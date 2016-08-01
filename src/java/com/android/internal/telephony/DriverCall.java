@@ -19,6 +19,7 @@ package com.android.internal.telephony;
 import android.telephony.Rlog;
 import java.lang.Comparable;
 import android.telephony.PhoneNumberUtils;
+import android.os.SystemProperties;
 
 /**
  * {@hide}
@@ -66,6 +67,13 @@ public class DriverCall implements Comparable<DriverCall> {
             ret.state = stateFromCLCC(p.nextInt());
 
             ret.isVoice = (0 == p.nextInt());
+
+            String thisDevice = SystemProperties.get("ro.product.device");
+            if (!TextUtils.isEmpty(thisDevice) && thisDevice.equals("serranodsdd")) {
+               //FIX for samsung i9192 
+               int fix9192 = p.nextInt();
+            }
+
             ret.isMpty = p.nextBoolean();
 
             // use ALLOWED as default presentation while parsing CLCC
